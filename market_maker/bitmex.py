@@ -73,9 +73,9 @@ class BitMEX(object):
             query['filter'] = json.dumps(filter)
         return self._curl_bitmex(path='instrument', query=query, verb='GET')
 
-    def market_depth(self, symbol):
+    def market_depth(self):
         """Get market depth / orderbook."""
-        return self.ws.market_depth(symbol)
+        return self.ws.market_depth()
 
     def recent_trades(self):
         """Get recent trades.

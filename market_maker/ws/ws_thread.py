@@ -48,7 +48,7 @@ class BitMEXWebsocket():
 
         # We can subscribe right in the connection querystring, so let's build that.
         # Subscribe to all pertinent endpoints
-        subscriptions = [sub + ':' + symbol for sub in ["quote", "trade"]]
+        subscriptions = [sub + ':' + symbol for sub in ["quote", "trade", "orderBookL2_25"]]
         subscriptions += ["instrument"]  # We want all of them
         if self.shouldAuth:
             subscriptions += [sub + ':' + symbol for sub in ["order", "execution"]]
@@ -109,9 +109,8 @@ class BitMEXWebsocket():
     def funds(self):
         return self.data['margin'][0]
 
-    def market_depth(self, symbol):
-        raise NotImplementedError('orderBook is not subscribed; use askPrice and bidPrice on instrument')
-        # return self.data['orderBook25'][0]
+    def market_depth(self):
+        return self.data['orderBookL2_25']
 
     def open_orders(self, clOrdIDPrefix):
         orders = self.data['order']
@@ -194,7 +193,7 @@ class BitMEXWebsocket():
     def __wait_for_account(self):
         '''On subscribe, this data will come down. Wait for it.'''
         # Wait for the keys to show up from the ws
-        while not {'margin', 'position', 'order'} <= set(self.data):
+        while not {'margin', 'position', 'order', 'orderBookL2_25'} <= set(self.data):
             sleep(0.1)
 
     def __wait_for_symbol(self, symbol):
@@ -250,7 +249,7 @@ class BitMEXWebsocket():
 
                     # Limit the max length of the table to avoid excessive memory usage.
                     # Don't trim orders because we'll lose valuable state if we do.
-                    if table not in ['order', 'orderBookL2'] and len(self.data[table]) > BitMEXWebsocket.MAX_TABLE_LEN:
+                    if table not in ['order', 'orderBookL2_25'] and len(self.data[table]) > BitMEXWebsocket.MAX_TABLE_LEN:
                         self.data[table] = self.data[table][(BitMEXWebsocket.MAX_TABLE_LEN // 2):]
 
                 elif action == 'update':
