@@ -225,7 +225,7 @@ class OrderManager:
         self.print_status()
 
         # Create orders and converge.
-        self.place_orders()
+        #self.place_orders()
 
     def print_status(self):
         """Print the current MM status."""
