@@ -9,6 +9,7 @@ import uuid
 from market_maker.auth import APIKeyAuthWithExpires
 from market_maker.utils import constants, errors, log
 from market_maker.ws.ws_thread import BitMEXWebsocket
+from threading import Timer
 
 logger = log.setup_custom_logger('root')
 
@@ -24,6 +25,7 @@ class BitMEX(object):
         self.base_url = base_url
         self.symbol = symbol
         self.postOnly = postOnly
+        self.shouldWSAuth = shouldWSAuth
         if (apiKey is None):
             raise Exception("Please set an API key and Secret to get started. See " +
                             "https://github.com/BitMEX/sample-market-maker/#getting-started for more information."
@@ -46,7 +48,16 @@ class BitMEX(object):
         self.ws = BitMEXWebsocket()
         self.ws.connect(base_url, symbol, shouldAuth=shouldWSAuth)
 
+        self.__check_ws_alive()
+
         self.timeout = timeout
+
+    def __check_ws_alive(self):
+        if not self.ws.updated:
+            self.ws = BitMEXWebsocket()
+            self.ws.connect(self.base_url, self.symbol, shouldAuth=self.shouldWSAuth)
+        self.ws.updated = False
+        self.t = Timer(10, self.__check_ws_alive).start()
 
     def __del__(self):
         self.exit()

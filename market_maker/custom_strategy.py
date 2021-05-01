@@ -10,7 +10,7 @@ from market_maker.market_maker import OrderManager
 def fetch_edge_price(orderbook: pd.DataFrame):
     orderbook.loc[:, 'ratio'] = orderbook['size'] / orderbook['size'].cumsum()
     orderbook = orderbook.reset_index(drop=True)
-    edge_idx = orderbook[orderbook['size'] > 1e4].iloc[1:]['ratio'].idxmax() - 1
+    edge_idx = orderbook.iloc[1:]['ratio'].idxmax() - 1
     return orderbook.loc[edge_idx]['price']
 
 
@@ -62,8 +62,8 @@ class CustomOrderManager(OrderManager):
         ).subscribe(self.flush_orders)
 
     def flush_orders(self, context):
-        buy_orders = context['buy_orders']
-        sell_orders = context['sell_orders']
+        buy_orders = context['buy_orders'] if 'buy_orders' in context else []
+        sell_orders = context['sell_orders'] if 'sell_orders' in context else []
         self.converge_orders(buy_orders, sell_orders)
 
     def place_orders(self):

@@ -34,6 +34,7 @@ class BitMEXWebsocket():
     MAX_TABLE_LEN = 200
 
     def __init__(self):
+        self.updated = True
         self.__reset()
 
     def __del__(self):
@@ -210,6 +211,7 @@ class BitMEXWebsocket():
         message = json.loads(message)
         logger.debug(json.dumps(message))
 
+        self.updated = True
         table = message['table'] if 'table' in message else None
         action = message['action'] if 'action' in message else None
         try:
