@@ -35,12 +35,12 @@ def process_orders(context, enabler, side, size, tag):
 
 @pipe_wrap
 def process_buy_orders(context):
-    return process_orders(context, 'long_limit_reached', 'Buy', 200, 'buy_orders')
+    return process_orders(context, 'long_limit_reached', 'Buy', settings.ORDER_START_SIZE, 'buy_orders')
 
 
 @pipe_wrap
 def process_sell_orders(context):
-    return process_orders(context, 'short_limit_reached', 'Sell', 200, 'sell_orders')
+    return process_orders(context, 'short_limit_reached', 'Sell', settings.ORDER_START_SIZE, 'sell_orders')
 
 
 @pipe_wrap
