@@ -197,6 +197,9 @@ class ExchangeInterface:
             return orders
         return self.bitmex.cancel([order['orderID'] for order in orders])
 
+    def recent_trades(self):
+        return self.bitmex.recent_trades()
+
 
 class OrderManager:
     def __init__(self):
@@ -227,6 +230,53 @@ class OrderManager:
         # Create orders and converge.
         #self.place_orders()
 
+    def estimate_trade_intensity(self, trades):
+
+        buy_trades = [trade for trade in trades if trade['side'] == 'Buy']
+        sell_trades = [trade for trade in trades if trade['side'] == 'Sell']
+        buy_trades_timestamps = [datetime.strptime(x['timestamp'], '%Y-%m-%dT%H:%M:%S.%fZ') for x in buy_trades]
+        sell_trades_timestamps = [datetime.strptime(x['timestamp'], '%Y-%m-%dT%H:%M:%S.%fZ') for x in sell_trades]
+
+        buy_trades_timestamps = sorted(buy_trades_timestamps)
+        sell_trades_timestamps = sorted(sell_trades_timestamps)
+        logger.info('buy_trades_timestamps: {}'.format(buy_trades_timestamps))
+        logger.info('sell_trades_timestamps: {}'.format(sell_trades_timestamps))
+
+        waiting_times_seconds_buys = [(t - s).total_seconds() for s, t in zip(buy_trades_timestamps, buy_trades_timestamps[1:])]
+        waiting_times_seconds_sells = [(t - s).total_seconds() for s, t in zip(sell_trades_timestamps, sell_trades_timestamps[1:])]
+        logger.info('waiting_times_seconds_buys: {}'.format(waiting_times_seconds_buys))
+        logger.info('waiting_times_seconds_sells: {}'.format(waiting_times_seconds_sells))
+
+        N_b = len(buy_trades_timestamps)
+        N_s = len(sell_trades_timestamps)
+
+        buy_sum = sum(waiting_times_seconds_buys)
+        sell_sum = sum(waiting_times_seconds_sells)
+
+        if N_b > 2:
+            if abs(buy_sum) < 1e-5:
+                lambda_buys = 0
+            else:
+                lambda_buys = (N_b - 2) / sum(waiting_times_seconds_buys)
+        else:
+            lambda_buys = 0
+
+        if N_s > 2:
+            if abs(sell_sum) < 1e-5:
+                lambda_sells = 0
+            else:
+                lambda_sells = (N_s - 2) / sum(waiting_times_seconds_sells)
+        else:
+            lambda_sells = 0
+
+        logger.info('lambda_buys: {}'.format(lambda_buys))
+        logger.info('lambda_sells: {}'.format(lambda_sells))
+        return lambda_buys, lambda_sells
+
+
+
+        # "2021-05-04T06:33:15.546Z"
+
     def print_status(self):
         """Print the current MM status."""
 
@@ -235,6 +285,13 @@ class OrderManager:
         self.running_qty = self.exchange.get_delta()
         tickLog = self.exchange.get_instrument()['tickLog']
         self.start_XBt = margin["marginBalance"]
+
+        trades = self.exchange.recent_trades()
+
+        logger.info('Recent Trades: {}'.format(trades))
+        logger.info('Number of Trades: {}'.format(len(trades)))
+
+        self.estimate_trade_intensity(trades)
 
         logger.info("Current XBT Balance: %.6f" % XBt_to_XBT(self.start_XBt))
         logger.info("Current Contract Position: %d" % self.running_qty)

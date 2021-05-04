@@ -21,7 +21,7 @@ def run():
             from market_maker import market_maker
             market_maker.run()
         except ImportError:
-            print('Can\'t find settings.py. Run "marketmaker setup" to create project.')
+            print('Can\'t find settings.py. Run "marketmaker.py setup" to create project.')
 
 
 def copy_files():
@@ -32,6 +32,6 @@ def copy_files():
 
     try:
         shutil.copytree(package_base, os.path.join(os.getcwd(), 'market_maker'))
-        print('Created marketmaker project.\n**** \nImportant!!!\nEdit settings.py before starting the bot.\n****')
+        print('Created marketmaker.py project.\n**** \nImportant!!!\nEdit settings.py before starting the bot.\n****')
     except FileExistsError:
         print('Market Maker project already exists!')

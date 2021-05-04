@@ -43,7 +43,7 @@ class BitMEXWebsocket():
     def connect(self, endpoint="", symbol="XBTN15", shouldAuth=True):
         '''Connect to the websocket and initialize data stores.'''
 
-        logger.debug("Connecting WebSocket.")
+        logger.debug("[BitMEXWebsocket] Connecting WebSocket.")
         self.symbol = symbol
         self.shouldAuth = shouldAuth
 
@@ -62,13 +62,15 @@ class BitMEXWebsocket():
         wsURL = urlunparse(urlParts)
         logger.info("Connecting to %s" % wsURL)
         self.__connect(wsURL)
-        logger.info('Connected to WS. Waiting for data images, this may take a moment...')
+        logger.info('[BitMEXWebsocket] Connected to WS. Waiting for data images, this may take a moment...')
 
         # Connected. Wait for partials
         self.__wait_for_symbol(symbol)
+        logger.info('[BitMEXWebsocket] Got symbol data')
+
         if self.shouldAuth:
             self.__wait_for_account()
-        logger.info('Got all market data. Starting.')
+        logger.info('[BitMEXWebsocket] Got all market data. Starting.')
 
     #
     # Data methods
@@ -159,6 +161,8 @@ class BitMEXWebsocket():
                                          header=self.__get_auth()
                                          )
 
+        logger.info("Authenticated OK")
+
         self.wst = threading.Thread(target=lambda: self.ws.run_forever(sslopt=sslopt_ca_certs))
         self.wst.daemon = True
         self.wst.start()
@@ -185,6 +189,8 @@ class BitMEXWebsocket():
         # To auth to the WS using an API key, we generate a signature of a nonce and
         # the WS API endpoint.
         nonce = generate_expires()
+        logger.info('[__get_auth] API_KEY: {}'.format(settings.API_KEY))
+        logger.info('[__get_auth] API_SECRET: {}'.format(settings.API_SECRET))
         return [
             "api-expires: " + str(nonce),
             "api-signature: " + generate_signature(settings.API_SECRET, 'GET', '/realtime', nonce, ''),
@@ -199,6 +205,7 @@ class BitMEXWebsocket():
 
     def __wait_for_symbol(self, symbol):
         '''On subscribe, this data will come down. Wait for it.'''
+        print(self.data)
         while not {'instrument', 'trade', 'quote'} <= set(self.data):
             sleep(0.1)
 
