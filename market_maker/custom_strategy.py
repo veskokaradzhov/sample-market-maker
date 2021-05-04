@@ -3,8 +3,11 @@ import pandas as pd
 from market_maker.rx_helper import pipe_wrap
 from rx.subject import Subject
 import settings
+from market_maker.utils import log
 
 from market_maker.market_maker import OrderManager
+
+logger = log.setup_custom_logger(__name__)
 
 
 def fetch_edge_price(orderbook: pd.DataFrame):
@@ -24,6 +27,8 @@ def process_orders(context, enabler, side, size, tag):
         price = fetch_edge_price(book)
         orders.append({'price': price, 'orderQty': size, 'side': side})
         context[tag] = orders
+    else:
+        context[tag] = []
     return context
 
 
@@ -41,8 +46,8 @@ def process_sell_orders(context):
 def check_position_limits(context):
     if settings.CHECK_POSITION_LIMITS:
         position = context['exchange'].get_delta()
-        context['short_limit_reached'] = position <= settings.MIN_POSITION
-        context['long_limit_reached'] = position >= settings.MAX_POSITION
+        context['short_limit_reached'] = True if position <= settings.MIN_POSITION else False
+        context['long_limit_reached'] = True if position >= settings.MAX_POSITION else False
     else:
         context['short_limit_reached'] = False
         context['long_limit_reached'] = False
@@ -51,6 +56,7 @@ def check_position_limits(context):
 
 class CustomOrderManager(OrderManager):
     """A sample order manager for implementing your own custom strategy"""
+
     def __init__(self):
         super().__init__()
         self.context = {'exchange': self.exchange}
@@ -64,7 +70,10 @@ class CustomOrderManager(OrderManager):
     def flush_orders(self, context):
         buy_orders = context['buy_orders'] if 'buy_orders' in context else []
         sell_orders = context['sell_orders'] if 'sell_orders' in context else []
-        self.converge_orders(buy_orders, sell_orders)
+        try:
+            self.converge_orders(buy_orders, sell_orders)
+        except Exception as e:
+            logger.exception(e)
 
     def place_orders(self):
         orderbook = pd.DataFrame(self.exchange.bitmex.market_depth())
