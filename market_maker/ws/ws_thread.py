@@ -10,7 +10,7 @@ import logging
 from market_maker.settings import settings
 from market_maker.auth.APIKeyAuth import generate_expires, generate_signature
 from market_maker.utils import log
-from market_maker.utils.math import toNearest
+from market_maker.utils.math import to_nearest
 from future.utils import iteritems
 from future.standard_library import hooks
 with hooks():  # Python 2/3 compat
@@ -107,7 +107,7 @@ class BitMEXWebsocket():
             }
 
         # The instrument has a tickSize. Use it to round values.
-        return {k: toNearest(float(v or 0), instrument['tickSize']) for k, v in iteritems(ticker)}
+        return {k: to_nearest(float(v or 0), instrument['tickSize']) for k, v in iteritems(ticker)}
 
     def funds(self):
         return self.data['margin'][0]
