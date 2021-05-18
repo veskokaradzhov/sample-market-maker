@@ -4,7 +4,7 @@ from market_maker.rx_helper import pipe_wrap
 from rx.subject import Subject
 import settings
 
-from market_maker.market_maker import OrderManager
+from market_maker.order_manager import OrderManager
 
 
 def fetch_edge_price(orderbook: pd.DataFrame):

@@ -354,6 +354,7 @@ class BitMEX(object):
             # If we haven't returned or re-raised yet, we get here.
             logger.error("Unhandled Error: %s: %s" % (e, response.text))
             logger.error("Endpoint was: %s %s: %s" % (verb, path, json.dumps(postdict)))
+            raise RuntimeError
             exit_or_throw(e)
 
         except requests.exceptions.Timeout as e:

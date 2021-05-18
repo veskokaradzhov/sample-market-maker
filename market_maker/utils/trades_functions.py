@@ -1,28 +1,80 @@
+""" Module with functions for estimating statistical properties of trades """
 from typing import List, Dict, Tuple
+import datetime as dt
+import logging
 import numpy as np
 from statsmodels.distributions.empirical_distribution import ECDF
 from matplotlib import pyplot as plt
+from market_maker.utils.math import estimate_exponential_lambda
+
+
+def estimate_trade_arrival_intensity(trades, logger: logging.Logger = None, verbose=True):
+    """
+    The arrival times of buy and sell Market Orders (trades) are modelled as independent exponential distributions
+    (i.e. the arrivals of buy and sell trades are Poisson processes)
+    These arrival times are assumed to be independent of the trade sizes
+
+    Args:
+        trades (List[Dict]) - list of trades from Bitmex
+        logger (logging.Logger) - logger object
+        verbose (bool) - whether to log info or not
+    Returns:
+        tuple of floats (lambda_buys, lambda_sells) - intensities of the buy and sell MOs
+    """
+    buy_trades = [trade for trade in trades if trade['side'] == 'Buy']
+    sell_trades = [trade for trade in trades if trade['side'] == 'Sell']
+    buy_trades_timestamps = [dt.datetime.strptime(x['timestamp'], '%Y-%m-%dT%H:%M:%S.%fZ') for x in buy_trades]
+    sell_trades_timestamps = [dt.datetime.strptime(x['timestamp'], '%Y-%m-%dT%H:%M:%S.%fZ') for x in sell_trades]
+
+    buy_trades_timestamps = sorted(buy_trades_timestamps)
+    sell_trades_timestamps = sorted(sell_trades_timestamps)
+
+    if logger and verbose:
+        logger.info('[estimate_trade_arrival_intensity] buy_trades: {}'.format(buy_trades))
+        logger.info('[estimate_trade_arrival_intensity] sell_trades: {}'.format(sell_trades))
+        logger.info('[estimate_trade_arrival_intensity] buy_trades_timestamps: {}'.format(buy_trades_timestamps))
+        logger.info('[estimate_trade_arrival_intensity] sell_trades_timestamps: {}'.format(sell_trades_timestamps))
+
+    waiting_times_seconds_buys = [(t - s).total_seconds() for s, t in
+                                  zip(buy_trades_timestamps, buy_trades_timestamps[1:])]
+    waiting_times_seconds_sells = [(t - s).total_seconds() for s, t in
+                                   zip(sell_trades_timestamps, sell_trades_timestamps[1:])]
+
+    if logger and verbose:
+        logger.info(
+            '[estimate_trade_arrival_intensity] waiting_times_seconds_buys: {}'.format(waiting_times_seconds_buys))
+        logger.info(
+            '[estimate_trade_arrival_intensity] waiting_times_seconds_sells: {}'.format(waiting_times_seconds_sells))
+
+    lambda_buy_arrivals = estimate_exponential_lambda(waiting_times_seconds_buys)
+    lambda_sell_arrivals = estimate_exponential_lambda(waiting_times_seconds_sells)
+
+    if logger and verbose:
+        logger.info('[estimate_trade_arrival_intensity] lambda_buy_arrivals: {}'.format(lambda_buy_arrivals))
+        logger.info('[estimate_trade_arrival_intensity] lambda_sell_arrivals: {}'.format(lambda_sell_arrivals))
+
+    return lambda_buy_arrivals, lambda_sell_arrivals
 
 
 def get_empirical_trade_size_cdfs(trades: List[Dict]) -> Tuple[ECDF, ECDF]:
     """
-    Get the empirical CDF of trades sizes
+    Get the empirical CDF of the LOG of the trades sizes
     """
 
     sell_trades = [trade['size'] for trade in trades if trade['side'] == 'Sell']
     buy_trades = [trade['size'] for trade in trades if trade['side'] == 'Buy']
 
-    log_sizes_sell_trades = np.log(sell_trades)
-    log_sizes_buy_trades = np.log(buy_trades)
-    ecdf_sells = ECDF(log_sizes_sell_trades)
-    ecdf_buys = ECDF(log_sizes_buy_trades)
+    # log_sizes_sell_trades = np.log(sell_trades)
+    # log_sizes_buy_trades = np.log(buy_trades)
+    ecdf_sells = ECDF(sell_trades)
+    ecdf_buys = ECDF(buy_trades)
 
     return ecdf_buys, ecdf_sells
 
 
 def rho(x: float, ecdf: ECDF) -> float:
     """ x is the quantity of the incoming MO """
-    return ecdf(np.log(x))
+    return ecdf(x)
 
 
 LIST_OF_TRADES = [

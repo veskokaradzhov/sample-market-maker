@@ -5,28 +5,48 @@ from rx.subject import Subject
 import settings
 from market_maker.utils import log
 
-from market_maker.market_maker import OrderManager
+from market_maker.order_manager import OrderManager
 
 logger = log.setup_custom_logger(__name__)
 
 
-def fetch_edge_price(orderbook: pd.DataFrame):
-    orderbook.loc[:, 'ratio'] = orderbook['size'] / orderbook['size'].cumsum()
-    orderbook = orderbook.reset_index(drop=True)
-    edge_idx = orderbook.iloc[1:]['ratio'].idxmax() - 1
-    return orderbook.loc[edge_idx]['price']
+# def fetch_edge_price(orderbook: pd.DataFrame):
+#     orderbook.loc[:, 'ratio'] = orderbook['size'] / orderbook['size'].cumsum()
+#     orderbook = orderbook.reset_index(drop=True)
+#     edge_idx = orderbook.iloc[1:]['ratio'].idxmax() - 1
+#     return orderbook.loc[edge_idx]['price']
 
 
 def process_orders(context, enabler, side, size, tag):
     if not context[enabler]:
+
+        # print(context.get('optimal_sell_lo_level'))
+        # print(context.get('optimal_buy_lo_level'))
+
         orders = []
-        orderbook = context['orderbook']
-        book: pd.DataFrame = orderbook[orderbook['side'] == side]
+        # orderbook = context['orderbook']
+        # book: pd.DataFrame = orderbook[orderbook['side'] == side]
+        # if side == 'Sell':
+        #     book.sort_index(ascending=False, inplace=True)
+
         if side == 'Sell':
-            book.sort_index(ascending=False, inplace=True)
-        price = fetch_edge_price(book)
-        orders.append({'price': price, 'orderQty': size, 'side': side})
-        context[tag] = orders
+            if context.get('optimal_sell_lo_level'):
+                price = context['optimal_sell_lo_level']
+            else:
+                price = None
+        else:
+            if context.get('optimal_buy_lo_level'):
+                price = context['optimal_buy_lo_level']
+            else:
+                price = None
+
+            # price = context['optimal_buy_lo_level']
+        # price = fetch_edge_price(book)
+        if price:
+            orders.append({'price': price, 'orderQty': size, 'side': side})
+            context[tag] = orders
+        else:
+            context[tag] = []
     else:
         context[tag] = []
     return context
@@ -46,8 +66,8 @@ def process_sell_orders(context):
 def check_position_limits(context):
     if settings.CHECK_POSITION_LIMITS:
         position = context['exchange'].get_delta()
-        context['short_limit_reached'] = True if position <= settings.MIN_POSITION else False
-        context['long_limit_reached'] = True if position >= settings.MAX_POSITION else False
+        context['short_limit_reached'] = True if position <= settings.MIN_POSITION + settings.ORDER_STEP_SIZE else False
+        context['long_limit_reached'] = True if position >= settings.MAX_POSITION - settings.ORDER_STEP_SIZE else False
     else:
         context['short_limit_reached'] = False
         context['long_limit_reached'] = False
@@ -59,7 +79,9 @@ class CustomOrderManager(OrderManager):
 
     def __init__(self):
         super().__init__()
-        self.context = {'exchange': self.exchange}
+        self.context.update({'exchange': self.exchange})
+        # self.optimal_buy_lo_level
+        # self.optimal_sell_lo_level
         self.orderbook_stream = Subject()
         self.orderbook_stream.pipe(
             check_position_limits(),
@@ -76,9 +98,9 @@ class CustomOrderManager(OrderManager):
             logger.exception(e)
 
     def place_orders(self):
-        orderbook = pd.DataFrame(self.exchange.bitmex.market_depth())
-        orderbook = orderbook.sort_values('price', ascending=False).reset_index(drop=True)
-        self.context['orderbook'] = orderbook
+        # orderbook = pd.DataFrame(self.exchange.bitmex.market_depth())
+        # orderbook = orderbook.sort_values('price', ascending=False).reset_index(drop=True)
+        # self.context['orderbook'] = orderbook
         self.orderbook_stream.on_next(self.context)
 
 

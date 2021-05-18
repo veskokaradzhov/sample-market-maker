@@ -1,8 +1,15 @@
+import sys
+from typing import Dict, List, Tuple, Union
 import numpy as np
 from matplotlib import pyplot as plt
 
+FLOAT_INFINITY = float('inf')
 
-def get_ask_side(book):
+
+def get_ask_side(book: List[Dict]) -> List[Dict]:
+    """
+    Get the ask side of the order book, sorted by price in increasing order (i.e. moving away from the best offer)
+    """
     levels = []
     for level in book:
         if level['side'] == 'Sell':
@@ -10,7 +17,10 @@ def get_ask_side(book):
     return sorted(levels, key=lambda k: k['price'], reverse=False)
 
 
-def get_bid_side(book):
+def get_bid_side(book: List[Dict]) -> List[Dict]:
+    """
+    Get the bid side of the order book, sorted by price in decreasing order (i.e. moving away from best bid)
+    """
     levels = []
     for level in book:
         if level['side'] == 'Buy':
@@ -18,14 +28,34 @@ def get_bid_side(book):
     return sorted(levels, key=lambda k: k['price'], reverse=True)
 
 
-def get_tob(book):
-    asks = get_ask_side(book)
+def get_tob(book: List[Dict]) -> Tuple[Union[Dict, None], Union[Dict, None]]:
+    """
+    Gets the best bid and best ask levels (dictionaries including price and quantity) given an order book.
+    """
     bids = get_bid_side(book)
-    return bids[0], asks[0]
+    asks = get_ask_side(book)
+
+    if not bids:
+        best_bid = None
+    else:
+        best_bid = bids[0]
+    if not asks:
+        best_ask = None
+    else:
+        best_ask = asks[0]
+
+    return best_bid, best_ask
 
 
 def get_mid(book):
     b, a = get_tob(book)
+    if b is None and a is not None:
+        return a['price']
+    if a is None and b is not None:
+        return b['price']
+    if a is None and b is None:
+        return None
+
     mid = 0.5 * (a['price'] + b['price'])
     return mid
 
@@ -41,6 +71,12 @@ def compute_cumulative_qty(book_side):
 
 def get_tob_prices(book):
     b, a = get_tob(book)
+    if b is None and a is not None:
+        return None, a['price']
+    if b is not None and a is None:
+        return b['price'], None
+    if b is None and a is None:
+        return None, None
     return b['price'], a['price']
 
 
@@ -48,12 +84,20 @@ def sell_mo_market_impact_function(book, mo_quantity):
     """
     Compute the impact of incoming sell MO on the price
     """
-    best_bid, best_ask = get_tob_prices(book)
+    if mo_quantity < 0:
+        raise ValueError('market order quantity cannot be < 0')
+    if mo_quantity == 0:
+        return 0.0
     mid = get_mid(book)
+    if mid is None:
+        return None
+
     bid_side_of_book = get_bid_side(book)
+    if not bid_side_of_book:
+        return None
     cumulative_qtys = compute_cumulative_qty(bid_side_of_book)
 
-    cqtys = [0] + cumulative_qtys + [float('inf')]
+    cqtys = [0.0] + cumulative_qtys + [FLOAT_INFINITY]
     bid_levels = len(bid_side_of_book)
 
     if mo_quantity == 0:
@@ -71,12 +115,19 @@ def buy_mo_market_impact_function(book, mo_quantity):
     """
     Compute the impact of incoming sell MO on the price
     """
-    best_bid, best_ask = get_tob_prices(book)
+    if mo_quantity < 0:
+        raise ValueError('market order quantity cannot be < 0')
+    if mo_quantity == 0:
+        return 0.0
     mid = get_mid(book)
+    if mid is None:
+        return None
     ask_side_of_book = get_ask_side(book)
+    if not ask_side_of_book:
+        return None
     cumulative_qtys = compute_cumulative_qty(ask_side_of_book)
 
-    cqtys = [0] + cumulative_qtys + [float('inf')]
+    cqtys = [0.0] + cumulative_qtys + [FLOAT_INFINITY]
     ask_levels = len(ask_side_of_book)
 
     if mo_quantity == 0:
@@ -90,59 +141,132 @@ def buy_mo_market_impact_function(book, mo_quantity):
                 return - mid + ask_side_of_book[-1]['price']
 
 
-EXAMPLE_ORDER_BOOK = [
-    {'symbol': 'XBTUSD', 'id': 15594418600, 'side': 'Sell', 'size': 2000, 'price': 55814},
-    {'symbol': 'XBTUSD', 'id': 15594419800, 'side': 'Sell', 'size': 28, 'price': 55802},
-    {'symbol': 'XBTUSD', 'id': 15594421100, 'side': 'Sell', 'size': 230, 'price': 55789},
-    {'symbol': 'XBTUSD', 'id': 15594421400, 'side': 'Sell', 'size': 1150, 'price': 55786},
-    {'symbol': 'XBTUSD', 'id': 15594421500, 'side': 'Sell', 'size': 11771, 'price': 55785},
-    {'symbol': 'XBTUSD', 'id': 15594425950, 'side': 'Sell', 'size': 5167, 'price': 55740.5},
-    {'symbol': 'XBTUSD', 'id': 15594426600, 'side': 'Sell', 'size': 2000, 'price': 55734},
-    {'symbol': 'XBTUSD', 'id': 15594430500, 'side': 'Sell', 'size': 4000, 'price': 55695},
-    {'symbol': 'XBTUSD', 'id': 15594432300, 'side': 'Sell', 'size': 47736, 'price': 55677},
-    {'symbol': 'XBTUSD', 'id': 15594433000, 'side': 'Sell', 'size': 45, 'price': 55670},
-    {'symbol': 'XBTUSD', 'id': 15594433200, 'side': 'Sell', 'size': 918, 'price': 55668},
-    {'symbol': 'XBTUSD', 'id': 15594433350, 'side': 'Sell', 'size': 30, 'price': 55666.5},
-    {'symbol': 'XBTUSD', 'id': 15594433600, 'side': 'Sell', 'size': 4000, 'price': 55664},
-    {'symbol': 'XBTUSD', 'id': 15594434950, 'side': 'Sell', 'size': 12243, 'price': 55650.5},
-    {'symbol': 'XBTUSD', 'id': 15594435800, 'side': 'Sell', 'size': 6121, 'price': 55642},
-    {'symbol': 'XBTUSD', 'id': 15594436700, 'side': 'Sell', 'size': 4000, 'price': 55633},
-    {'symbol': 'XBTUSD', 'id': 15594439150, 'side': 'Sell', 'size': 2000, 'price': 55608.5},
-    {'symbol': 'XBTUSD', 'id': 15594439500, 'side': 'Sell', 'size': 865, 'price': 55605},
-    {'symbol': 'XBTUSD', 'id': 15594439800, 'side': 'Sell', 'size': 4000, 'price': 55602},
-    {'symbol': 'XBTUSD', 'id': 15594439950, 'side': 'Sell', 'size': 1500, 'price': 55600.5},
-    {'symbol': 'XBTUSD', 'id': 15594440600, 'side': 'Sell', 'size': 458, 'price': 55594},
-    {'symbol': 'XBTUSD', 'id': 15594441100, 'side': 'Sell', 'size': 1604, 'price': 55589},
-    {'symbol': 'XBTUSD', 'id': 15594442750, 'side': 'Sell', 'size': 2576, 'price': 55572.5},
-    {'symbol': 'XBTUSD', 'id': 15594442900, 'side': 'Sell', 'size': 5544, 'price': 55571},
-    {'symbol': 'XBTUSD', 'id': 15594443900, 'side': 'Buy', 'size': 10000, 'price': 55561},
-    {'symbol': 'XBTUSD', 'id': 15594444200, 'side': 'Buy', 'size': 2500, 'price': 55558},
-    {'symbol': 'XBTUSD', 'id': 15594445050, 'side': 'Buy', 'size': 12243, 'price': 55549.5},
-    {'symbol': 'XBTUSD', 'id': 15594445400, 'side': 'Buy', 'size': 440398, 'price': 55546},
-    {'symbol': 'XBTUSD', 'id': 15594446000, 'side': 'Buy', 'size': 1599, 'price': 55540},
-    {'symbol': 'XBTUSD', 'id': 15594446100, 'side': 'Buy', 'size': 1372, 'price': 55539},
-    {'symbol': 'XBTUSD', 'id': 15594448750, 'side': 'Buy', 'size': 687, 'price': 55512.5},
-    {'symbol': 'XBTUSD', 'id': 15594450000, 'side': 'Buy', 'size': 513, 'price': 55500},
-    {'symbol': 'XBTUSD', 'id': 15594456200, 'side': 'Buy', 'size': 457, 'price': 55438},
-    {'symbol': 'XBTUSD', 'id': 15594460350, 'side': 'Buy', 'size': 1039, 'price': 55396.5},
-    {'symbol': 'XBTUSD', 'id': 15594460400, 'side': 'Buy', 'size': 1709, 'price': 55396},
-    {'symbol': 'XBTUSD', 'id': 15594460600, 'side': 'Buy', 'size': 4000, 'price': 55394},
-    {'symbol': 'XBTUSD', 'id': 15594461400, 'side': 'Buy', 'size': 4000, 'price': 55386},
-    {'symbol': 'XBTUSD', 'id': 15594461500, 'side': 'Buy', 'size': 1283, 'price': 55385},
-    {'symbol': 'XBTUSD', 'id': 15594463650, 'side': 'Buy', 'size': 2000, 'price': 55363.5},
-    {'symbol': 'XBTUSD', 'id': 15594464450, 'side': 'Buy', 'size': 4000, 'price': 55355.5},
-    {'symbol': 'XBTUSD', 'id': 15594465400, 'side': 'Buy', 'size': 40456, 'price': 55346},
-    {'symbol': 'XBTUSD', 'id': 15594467500, 'side': 'Buy', 'size': 4000, 'price': 55325},
-    {'symbol': 'XBTUSD', 'id': 15594469000, 'side': 'Buy', 'size': 1146, 'price': 55310},
-    {'symbol': 'XBTUSD', 'id': 15594413000, 'side': 'Sell', 'size': 578, 'price': 55870},
-    {'symbol': 'XBTUSD', 'id': 15594469800, 'side': 'Buy', 'size': 4000, 'price': 55302},
-    {'symbol': 'XBTUSD', 'id': 15594469900, 'side': 'Buy', 'size': 912, 'price': 55301},
-    {'symbol': 'XBTUSD', 'id': 15594470400, 'side': 'Buy', 'size': 867775, 'price': 55296},
-    {'symbol': 'XBTUSD', 'id': 15594470600, 'side': 'Buy', 'size': 4000, 'price': 55294},
-    {'symbol': 'XBTUSD', 'id': 15594471600, 'side': 'Buy', 'size': 1411, 'price': 55284},
-    {'symbol': 'XBTUSD', 'id': 15594471800, 'side': 'Buy', 'size': 2736, 'price': 55282}]
+def buy_mo_inverse_market_impact(book, impact):
+    """ get the minimum market order quantity that causes a given impact """
+    if len(book) == 0:
+        return FLOAT_INFINITY
+    if impact < 0:
+        raise ValueError('market impact cannot be negative')
+    best_bid, best_ask = get_tob_prices(book)
+    half_spread = (best_ask - best_bid) / 2
+    ask_side_of_book = get_ask_side(book)
+    if len(ask_side_of_book) == 0:
+        return FLOAT_INFINITY
+    cumulative_qtys = compute_cumulative_qty(ask_side_of_book)
+
+    cqtys = cumulative_qtys  # + [FLOAT_INFINITY]
+    impacts = [buy_mo_market_impact_function(book, cqty) for cqty in cqtys]
+
+    if impact < half_spread:
+        return 0
+    if impact > max(impacts):
+        return FLOAT_INFINITY
+    impacts += [FLOAT_INFINITY]
+    for i, (first, second) in enumerate(zip(impacts, impacts[1:])):
+        if (impact >= first) and (impact < second):
+            return cqtys[i]
+
+def sell_mo_inverse_market_impact(book, impact):
+    """ get the minimum market order quantity that causes a given impact """
+    if len(book) == 0:
+        return FLOAT_INFINITY
+    if impact < 0:
+        raise ValueError('market impact cannot be negative')
+    best_bid, best_ask = get_tob_prices(book)
+    half_spread = (best_ask - best_bid) / 2
+    bid_side_of_book = get_bid_side(book)
+    if len(bid_side_of_book) == 0:
+        return FLOAT_INFINITY
+    cumulative_qtys = compute_cumulative_qty(bid_side_of_book)
+
+    cqtys = cumulative_qtys  # + [FLOAT_INFINITY]
+    impacts = [sell_mo_market_impact_function(book, cqty) for cqty in cqtys]
+
+    if impact < half_spread:
+        return 0
+    if impact > max(impacts):
+        return FLOAT_INFINITY
+    impacts += [FLOAT_INFINITY]
+    for i, (first, second) in enumerate(zip(impacts, impacts[1:])):
+        if (impact >= first) and (impact < second):
+            return cqtys[i]
+
+#
+# def inv_impact(qtys, impacts, d):
+#     loc = np.argwhere((impacts >= d))[0][0]
+#     # print(qtys[loc])
+#     return qtys[loc]
+
+
+EXAMPLE_ORDER_BOOK = [{'symbol': 'XBTUSD', 'id': 8795076600, 'side': 'Sell', 'size': 3011, 'price': 49234},
+                      {'symbol': 'XBTUSD', 'id': 8795076800, 'side': 'Sell', 'size': 98, 'price': 49232},
+                      {'symbol': 'XBTUSD', 'id': 8795076950, 'side': 'Sell', 'size': 2073, 'price': 49230.5},
+                      {'symbol': 'XBTUSD', 'id': 8795077100, 'side': 'Sell', 'size': 3652, 'price': 49229},
+                      {'symbol': 'XBTUSD', 'id': 8795077150, 'side': 'Sell', 'size': 400, 'price': 49228.5},
+                      {'symbol': 'XBTUSD', 'id': 8795077200, 'side': 'Sell', 'size': 4000, 'price': 49228},
+                      {'symbol': 'XBTUSD', 'id': 8795077250, 'side': 'Sell', 'size': 61456, 'price': 49227.5},
+                      {'symbol': 'XBTUSD', 'id': 8795077500, 'side': 'Sell', 'size': 579459, 'price': 49225},
+                      {'symbol': 'XBTUSD', 'id': 8795077600, 'side': 'Sell', 'size': 38, 'price': 49224},
+                      {'symbol': 'XBTUSD', 'id': 8795077700, 'side': 'Sell', 'size': 334, 'price': 49223},
+                      {'symbol': 'XBTUSD', 'id': 8795078100, 'side': 'Sell', 'size': 4, 'price': 49219},
+                      {'symbol': 'XBTUSD', 'id': 8795078350, 'side': 'Sell', 'size': 553, 'price': 49216.5},
+                      {'symbol': 'XBTUSD', 'id': 8795078400, 'side': 'Sell', 'size': 103, 'price': 49216},
+                      {'symbol': 'XBTUSD', 'id': 8795078450, 'side': 'Sell', 'size': 10, 'price': 49215.5},
+                      {'symbol': 'XBTUSD', 'id': 8795078750, 'side': 'Sell', 'size': 3000, 'price': 49212.5},
+                      {'symbol': 'XBTUSD', 'id': 8795078800, 'side': 'Sell', 'size': 2000, 'price': 49212},
+                      {'symbol': 'XBTUSD', 'id': 8795078900, 'side': 'Sell', 'size': 500, 'price': 49211},
+                      {'symbol': 'XBTUSD', 'id': 8795078950, 'side': 'Sell', 'size': 1215, 'price': 49210.5},
+                      {'symbol': 'XBTUSD', 'id': 8795079000, 'side': 'Sell', 'size': 408, 'price': 49210},
+                      {'symbol': 'XBTUSD', 'id': 8795079050, 'side': 'Sell', 'size': 200, 'price': 49209.5},
+                      {'symbol': 'XBTUSD', 'id': 8795079250, 'side': 'Sell', 'size': 10, 'price': 49207.5},
+                      {'symbol': 'XBTUSD', 'id': 8795079300, 'side': 'Sell', 'size': 200, 'price': 49207},
+                      {'symbol': 'XBTUSD', 'id': 8795079750, 'side': 'Sell', 'size': 49, 'price': 49202.5},
+                      {'symbol': 'XBTUSD', 'id': 8795079900, 'side': 'Sell', 'size': 58, 'price': 49201},
+                      {'symbol': 'XBTUSD', 'id': 8795079950, 'side': 'Sell', 'size': 184143, 'price': 49200.5},
+                      {'symbol': 'XBTUSD', 'id': 8795080000, 'side': 'Buy', 'size': 2761523, 'price': 49200},
+                      {'symbol': 'XBTUSD', 'id': 8795080150, 'side': 'Buy', 'size': 290443, 'price': 49198.5},
+                      {'symbol': 'XBTUSD', 'id': 8795080200, 'side': 'Buy', 'size': 20119, 'price': 49198},
+                      {'symbol': 'XBTUSD', 'id': 8795080450, 'side': 'Buy', 'size': 50030, 'price': 49195.5},
+                      {'symbol': 'XBTUSD', 'id': 8795080550, 'side': 'Buy', 'size': 18060, 'price': 49194.5},
+                      {'symbol': 'XBTUSD', 'id': 8795081000, 'side': 'Buy', 'size': 5, 'price': 49190},
+                      {'symbol': 'XBTUSD', 'id': 8795081050, 'side': 'Buy', 'size': 28125, 'price': 49189.5},
+                      {'symbol': 'XBTUSD', 'id': 8795081100, 'side': 'Buy', 'size': 2989, 'price': 49189},
+                      {'symbol': 'XBTUSD', 'id': 8795081150, 'side': 'Buy', 'size': 33300, 'price': 49188.5},
+                      {'symbol': 'XBTUSD', 'id': 8795081200, 'side': 'Buy', 'size': 9510, 'price': 49188},
+                      {'symbol': 'XBTUSD', 'id': 8795081400, 'side': 'Buy', 'size': 30009, 'price': 49186},
+                      {'symbol': 'XBTUSD', 'id': 8795081500, 'side': 'Buy', 'size': 105000, 'price': 49185},
+                      {'symbol': 'XBTUSD', 'id': 8795081550, 'side': 'Buy', 'size': 401500, 'price': 49184.5},
+                      {'symbol': 'XBTUSD', 'id': 8795081600, 'side': 'Buy', 'size': 101, 'price': 49184},
+                      {'symbol': 'XBTUSD', 'id': 8795081750, 'side': 'Buy', 'size': 79000, 'price': 49182.5},
+                      {'symbol': 'XBTUSD', 'id': 8795081800, 'side': 'Buy', 'size': 49154, 'price': 49182},
+                      {'symbol': 'XBTUSD', 'id': 8795081900, 'side': 'Buy', 'size': 25000, 'price': 49181},
+                      {'symbol': 'XBTUSD', 'id': 8795082100, 'side': 'Buy', 'size': 75000, 'price': 49179},
+                      {'symbol': 'XBTUSD', 'id': 8795082150, 'side': 'Buy', 'size': 75000, 'price': 49178.5},
+                      {'symbol': 'XBTUSD', 'id': 8795080800, 'side': 'Buy', 'size': 52650, 'price': 49192},
+                      {'symbol': 'XBTUSD', 'id': 8795080900, 'side': 'Buy', 'size': 15730, 'price': 49191},
+                      {'symbol': 'XBTUSD', 'id': 8795082250, 'side': 'Buy', 'size': 1200, 'price': 49177.5},
+                      {'symbol': 'XBTUSD', 'id': 8795082300, 'side': 'Buy', 'size': 668444, 'price': 49177},
+                      {'symbol': 'XBTUSD', 'id': 8795082350, 'side': 'Buy', 'size': 217853, 'price': 49176.5},
+                      {'symbol': 'XBTUSD', 'id': 8795082400, 'side': 'Buy', 'size': 675512, 'price': 49176}]
+
+
+def plot_order_book(book):
+    sell_quantities = [order['size'] for order in book if order['side'] == 'Sell']
+    buy_quantities = [order['size'] for order in book if order['side'] == 'Buy']
+    sell_prices = [order['price'] for order in book if order['side'] == 'Sell']
+    buy_prices = [order['price'] for order in book if order['side'] == 'Buy']
+
+    plt.figure()
+    plt.bar(buy_prices, buy_quantities, width=0.5, color='b')
+    plt.bar(sell_prices, sell_quantities, width=0.5, color='r')
+    plt.show()
+
+
+# if __name__ == '__main__':
+#     plot_order_book(EXAMPLE_ORDER_BOOK)
 
 if __name__ == '__main__':
+
     from market_maker.utils.trades_functions import LIST_OF_TRADES, rho, get_empirical_trade_size_cdfs
 
     HALF_SPREAD = get_mid(EXAMPLE_ORDER_BOOK) - get_tob_prices(EXAMPLE_ORDER_BOOK)[0]
@@ -160,20 +284,83 @@ if __name__ == '__main__':
     print('min buy_quantities', min(buy_quantities))
     print('max buy_quantities', max(buy_quantities))
 
-    incoming_buy_mo_sizes = [1] + [x for x in range(0, max(buy_quantities) + 1, 10) if x > 0]
-    incoming_sell_mo_sizes = [1] + [x for x in range(0, max(sell_quantities) + 1, 10) if x > 0]
+    incoming_buy_mo_sizes = [1] + [x for x in range(0, 10000000 + 1, 1000) if x > 0]
+    incoming_sell_mo_sizes = [1] + [x for x in range(0, 10000000 + 1, 1000) if x > 0]
+    print('done')
 
     buy_market_impacts = np.array([buy_mo_market_impact_function(EXAMPLE_ORDER_BOOK, x) for x in incoming_buy_mo_sizes])
-    sell_market_impacts = np.array([sell_mo_market_impact_function(EXAMPLE_ORDER_BOOK, x) for x in incoming_sell_mo_sizes])
+    sell_market_impacts = np.array(
+        [sell_mo_market_impact_function(EXAMPLE_ORDER_BOOK, x) for x in incoming_sell_mo_sizes])
+
+    # print(buy_market_impacts)
+    # plt.figure()
+    # plt.plot(incoming_buy_mo_sizes, buy_market_impacts)
+    #
+    # plt.figure()
+    # plt.plot(incoming_sell_mo_sizes, sell_market_impacts)
+
+    max_buy_impact = max(buy_market_impacts)
+    max_sell_impact = max(sell_market_impacts)
+
+    mid_price = get_mid(EXAMPLE_ORDER_BOOK)
+    best_bid, best_ask = get_tob_prices(EXAMPLE_ORDER_BOOK)
+    half_spread = best_ask - mid_price
+
+    price_granularity = 0.5
+
+    sell_lo_depths = [half_spread] + [x for x in np.linspace(price_granularity, max_buy_impact, 2*int(max_buy_impact) + 1, endpoint=True)]
+    buy_lo_depths = [half_spread] + [x for x in np.linspace(price_granularity, max_sell_impact, 2*int(max_buy_impact) + 1, endpoint=True)]
+
+
+    # sell_lo_depths = [x for x in np.linspace(half_spread, max_buy_impact, 2*int(max_buy_impact) + 1, endpoint=True)]
+    # buy_lo_depths = [x for x in np.linspace(half_spread, max_sell_impact + 1.0, 2 * int(max_buy_impact + 0.0))]
+    buy_cdf, sell_cdf = get_empirical_trade_size_cdfs(LIST_OF_TRADES)
+
+    #
+    posted_depths = []
+    fill_probs = []
+
+    print('Sell LOs fill probability given incoming buy MO:')
+    for posted_depth in sell_lo_depths:
+        critical_mo_size = buy_mo_inverse_market_impact(EXAMPLE_ORDER_BOOK, posted_depth)
+        prob_filled = 1 - rho(critical_mo_size, buy_cdf)
+        print(posted_depth, critical_mo_size, prob_filled)
+        posted_depths.append(posted_depth)
+        fill_probs.append(prob_filled)
+
+    value_function = np.array(posted_depths) * np.array(fill_probs)
+
+    plt.figure()
+    plt.plot(posted_depths, value_function, c='r')
+    plt.xlabel('LO depth')
+    plt.ylabel('Expected Profit Per Trade')
+    plt.title('Expected Profit per Trade (buy MO, sell LO filled)')
+    plt.show()
+
+    # posted_depths = []
+    # fill_probs = []
+
+    # print('Buy LOs fill probability given incoming sell MO:')
+    # for posted_depth in sell_lo_depths:
+    #     critical_mo_size = buy_mo_inverse_market_impact(EXAMPLE_ORDER_BOOK, posted_depth)
+    #     prob_filled = 1 - rho(critical_mo_size, buy_cdf)
+    #     print(posted_depth, critical_mo_size, prob_filled)
+    #     posted_depths.append(posted_depth)
+    #     fill_probs.append(prob_filled)
+
+
+    sys.exit(0)
+
+
+    # plt.show()
 
     # print(np.where((buy_market_impacts >= 10.0) & (buy_market_impacts < 10.5)))
     # print(np.where((buy_market_impacts >= 10.0)))
 
-    def inv_impact(qtys, impacts, d):
-        loc = np.argwhere((impacts >= d))[0][0]
-        # print(qtys[loc])
-        return qtys[loc]
-
+    # def inv_impact(qtys, impacts, d):
+    #     loc = np.argwhere((impacts >= d))[0][0]
+    #     # print(qtys[loc])
+    #     return qtys[loc]
 
     # inv_impact(incoming_buy_mo_sizes, buy_market_impacts, 10.0)
     # inv_impact(incoming_buy_mo_sizes, buy_market_impacts, 11.0)
@@ -185,17 +372,16 @@ if __name__ == '__main__':
     # inv_impact(incoming_buy_mo_sizes, buy_market_impacts, 100.0)
 
     #
-    buy_cdf, sell_cdf = get_empirical_trade_size_cdfs(LIST_OF_TRADES)
 
-    LO_DEPTHS = [x for x in np.linspace(0.0, 150, 301)]
-
+    LO_DEPTHS = [x for x in np.linspace(0.0, 100, 201)]
+    LO_DEPTHS = [0.0, 1.0, 2.0]
 
     #
     posted_depths = []
     fill_probs = []
     #
     for posted_depth in LO_DEPTHS:
-        critical_mo_size = inv_impact(incoming_buy_mo_sizes, buy_market_impacts, posted_depth)
+        critical_mo_size = buy_mo_inverse_market_impact(EXAMPLE_ORDER_BOOK, posted_depth)
         prob_filled = 1 - rho(critical_mo_size, buy_cdf)
         print(posted_depth, critical_mo_size, prob_filled)
         posted_depths.append(posted_depth)
@@ -210,13 +396,13 @@ if __name__ == '__main__':
     plt.title('Expected Profit per Trade (buy MO)')
     # plt.show()
 
-    LO_DEPTHS = [x for x in np.linspace(0.0, 20, 41)]
+    LO_DEPTHS = [x for x in np.linspace(0.0, 200, 401)]
 
     posted_depths = []
     fill_probs = []
     #
     for posted_depth in LO_DEPTHS:
-        critical_mo_size = inv_impact(incoming_sell_mo_sizes, sell_market_impacts, posted_depth)
+        critical_mo_size = sell_mo_inverse_market_impact(EXAMPLE_ORDER_BOOK, posted_depth)
         prob_filled = 1 - rho(critical_mo_size, sell_cdf)
         print(posted_depth, critical_mo_size, prob_filled)
         posted_depths.append(posted_depth)
@@ -230,13 +416,6 @@ if __name__ == '__main__':
     plt.ylabel('Expected Profit Per Trade')
     plt.title('Expected Profit per Trade (sell MO)')
     plt.show()
-
-
-
-
-
-
-
 
     #################
 

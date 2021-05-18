@@ -1,7 +1,7 @@
 import logging
 import os
 from logging.handlers import TimedRotatingFileHandler
-from market_maker.settings import settings
+from market_maker.settings_util import settings
 
 loggers = {}
 

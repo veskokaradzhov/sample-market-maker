@@ -1,27 +1,46 @@
-from __future__ import absolute_import
-from time import sleep
-import sys
-from datetime import datetime
-from os.path import getmtime
-import random
-import requests
 import atexit
-import signal
-
-# from market_maker import bitmex
-from market_maker.settings import settings
-from market_maker.utils import log, constants, errors, math
-from market_maker.exchange_interface import ExchangeInterface
-
 # Used for reloading the bot - saves modified times of key files
 import os
+import random
+import signal
+import sys
+from datetime import datetime
+from time import sleep
+from collections import deque
+import numpy as np
+import requests
+from matplotlib import pyplot as plt
+from market_maker.exchange_interface import ExchangeInterface
+from market_maker.settings_util import settings
+from market_maker.utils import log, constants, errors, math
+from market_maker.utils.trades_functions import estimate_trade_arrival_intensity, get_empirical_trade_size_cdfs
+from market_maker.utils.market_impact import buy_mo_market_impact_function, sell_mo_market_impact_function
+from market_maker.utils.market_impact import buy_mo_inverse_market_impact, sell_mo_inverse_market_impact, get_mid, \
+    get_tob_prices
+
+TRADES_DEQUE_SIZE = 200  # number of trades to obtain statistical estimates of the arrival intensity and size CDF
+PRICE_GRANULARITY = 0.5
+MO_PREVENTION_DEPTH = 2 * PRICE_GRANULARITY
 
 
-# watched_files_mtimes = [(f, getmtime(f)) for f in settings.WATCHED_FILES]
+def find_trade(list_of_trade_dicts, match_id):
+    # 'trdMatchID': '512cf496-502b-882d-2c75-ef81a5b1b6d4'
+    for trade in list_of_trade_dicts:
+        if trade['trdMatchID'] == match_id:
+            return True
+    return False
 
-#
-# Helpers
-#
+
+def get_set_of_trade_ids_from_deque(trades_deque: deque) -> set:
+    ids = set()
+    for trade in trades_deque:
+        ids.add(trade['trdMatchID'])
+    return ids
+
+
+def rho(x, cdf_func):
+    """ x is the quantity of the incoming MO """
+    return cdf_func(x)
 
 
 class OrderManager:
@@ -44,58 +63,24 @@ class OrderManager:
         self.instrument = self.exchange.get_instrument()
         self.starting_qty = self.exchange.get_delta()
         self.running_qty = self.starting_qty
+        self.trades_deque = deque(maxlen=TRADES_DEQUE_SIZE)
+        self.stored_trade_ids = set()
+        self.loop_counter = 1
+        self.context = dict()
+        self.optimal_buy_lo_level = None
+        self.optimal_sell_lo_level = None
         self.reset()
 
     def reset(self):
         self.exchange.cancel_all_orders()
         self.sanity_check()
-        self.print_status()
+        self.update_state()
 
         # Create orders and converge.
         # self.place_orders()
 
-    def estimate_trade_intensity(self, trades):
-
-        buy_trades = [trade for trade in trades if trade['side'] == 'Buy']
-        sell_trades = [trade for trade in trades if trade['side'] == 'Sell']
-        buy_trades_timestamps = [datetime.strptime(x['timestamp'], '%Y-%m-%dT%H:%M:%S.%fZ') for x in buy_trades]
-        sell_trades_timestamps = [datetime.strptime(x['timestamp'], '%Y-%m-%dT%H:%M:%S.%fZ') for x in sell_trades]
-
-        buy_trades_sizes = [x['size'] for x in buy_trades]
-        sell_trades_sizes = [x['size'] for x in sell_trades]
-
-        buy_trades_timestamps = sorted(buy_trades_timestamps)
-        sell_trades_timestamps = sorted(sell_trades_timestamps)
-        self.logger.info('buy_trades: {}'.format(buy_trades))
-        self.logger.info('sell_trades: {}'.format(sell_trades))
-        self.logger.info('buy_trades_timestamps: {}'.format(buy_trades_timestamps))
-        self.logger.info('sell_trades_timestamps: {}'.format(sell_trades_timestamps))
-        self.logger.info('buy_trades_sizes: {}'.format(buy_trades_sizes))
-        self.logger.info('sell_trades_sizes: {}'.format(sell_trades_timestamps))
-
-        waiting_times_seconds_buys = [(t - s).total_seconds() for s, t in
-                                      zip(buy_trades_timestamps, buy_trades_timestamps[1:])]
-        waiting_times_seconds_sells = [(t - s).total_seconds() for s, t in
-                                       zip(sell_trades_timestamps, sell_trades_timestamps[1:])]
-        self.logger.info('waiting_times_seconds_buys: {}'.format(waiting_times_seconds_buys))
-        self.logger.info('waiting_times_seconds_sells: {}'.format(waiting_times_seconds_sells))
-
-        lambda_buy_arrivals = math.estimate_exponential_lambda(waiting_times_seconds_buys)
-        lambda_sell_arrivals = math.estimate_exponential_lambda(waiting_times_seconds_sells)
-
-        self.logger.info('lambda_buy_arrivals: {}'.format(lambda_buy_arrivals))
-        self.logger.info('lambda_sell_arrivals: {}'.format(lambda_sell_arrivals))
-
-        lambda_buy_sizes = math.estimate_exponential_lambda(buy_trades_sizes)
-        lambda_sell_sizes = math.estimate_exponential_lambda(sell_trades_sizes)
-
-        self.logger.info('lambda_buy_sizes: {}'.format(lambda_buy_sizes))
-        self.logger.info('lambda_sell_sizes: {}'.format(lambda_sell_sizes))
-
-        return lambda_buy_arrivals, lambda_sell_arrivals
-
-    def print_status(self):
-        """Print the current MM status."""
+    def update_state(self):
+        """Update the current MM state"""
 
         margin = self.exchange.get_margin()
         position = self.exchange.get_position()
@@ -106,12 +91,98 @@ class OrderManager:
         order_book = self.exchange.bitmex.market_depth()
         self.logger.info('Order Book: {}'.format(order_book))
 
+        self.stored_trade_ids = get_set_of_trade_ids_from_deque(self.trades_deque)
+
         trades = self.exchange.recent_trades()
 
-        self.logger.info('Recent Trades: {}'.format(trades))
-        self.logger.info('Number of Trades: {}'.format(len(trades)))
+        for trade in trades:
+            if trade['trdMatchID'] not in self.stored_trade_ids:
+                self.trades_deque.append(trade)
+        # keep this set updated
+        self.stored_trade_ids = get_set_of_trade_ids_from_deque(self.trades_deque)
 
-        self.estimate_trade_intensity(trades)
+        # self.logger.info('Recent Trades: {}'.format(trades))
+        self.logger.info('Number of Trades: {}'.format(len(self.trades_deque)))
+        # self.logger.info('Trades Deque: {}'.format(self.trades_deque))
+        #
+        # lambda_buy_arrivals, lambda_sell_arrivals = estimate_trade_arrival_intensity(self.trades_deque, self.logger,
+        #                                                                              verbose=True)
+
+        sell_quantities = [trade['size'] for trade in self.trades_deque if trade['side'] == 'Sell']
+        buy_quantities = [trade['size'] for trade in self.trades_deque if trade['side'] == 'Buy']
+
+        if len(sell_quantities) > 10 and len(buy_quantities) > 10 and len(self.trades_deque) > 20:
+            buy_cdf, sell_cdf = get_empirical_trade_size_cdfs(list(self.trades_deque))
+
+            incoming_buy_mo_sizes = [1] + [x for x in range(0, max(buy_quantities) + 1, 5) if x > 0]
+            incoming_sell_mo_sizes = [1] + [x for x in range(0, max(sell_quantities) + 1, 5) if x > 0]
+
+            buy_market_impacts = np.array(
+                [buy_mo_market_impact_function(order_book, x) for x in incoming_buy_mo_sizes])
+            sell_market_impacts = np.array(
+                [sell_mo_market_impact_function(order_book, x) for x in incoming_sell_mo_sizes])
+            mid_price = get_mid(order_book)
+            best_bid, best_ask = get_tob_prices(order_book)
+            half_spread = best_ask - mid_price
+
+            max_buy_impact = max(buy_market_impacts)
+            max_sell_impact = max(sell_market_impacts)
+
+            sell_lo_depths = [half_spread] + [x for x in np.linspace(PRICE_GRANULARITY, max_buy_impact,
+                                                                     2 * int(max_buy_impact) + 1, endpoint=True)]
+            buy_lo_depths = [half_spread] + [x for x in np.linspace(PRICE_GRANULARITY, max_sell_impact,
+                                                                    2 * int(max_buy_impact) + 1, endpoint=True)]
+
+            # sell_lo_depths = [x for x in np.linspace(0.0, 30, 61)]
+            # buy_lo_depths = [x for x in np.linspace(0.0, 30, 61)]
+            posted_depths = []
+            fill_probs = []
+            #
+            for posted_depth in sell_lo_depths:
+                critical_mo_size = buy_mo_inverse_market_impact(order_book, posted_depth)
+                prob_filled = 1 - rho(critical_mo_size, buy_cdf)
+                # print(posted_depth, critical_mo_size, prob_filled)
+                posted_depths.append(posted_depth)
+                fill_probs.append(prob_filled)
+
+            value_function = np.array(posted_depths) * np.array(fill_probs)
+            max_val_index_sell_lo = np.nanargmax(value_function)
+
+            optimal_sell_lo_depth = math.to_nearest(posted_depths[max_val_index_sell_lo], PRICE_GRANULARITY)
+            optimal_sell_lo_post = math.to_nearest(mid_price + optimal_sell_lo_depth + MO_PREVENTION_DEPTH, PRICE_GRANULARITY)
+
+            posted_depths = []
+            fill_probs = []
+            #
+            for posted_depth in buy_lo_depths:
+                critical_mo_size = sell_mo_inverse_market_impact(order_book, posted_depth)
+                prob_filled = 1 - rho(critical_mo_size, sell_cdf)
+                # print(posted_depth, critical_mo_size, prob_filled)
+                posted_depths.append(posted_depth)
+                fill_probs.append(prob_filled)
+
+            value_function = np.array(posted_depths) * np.array(fill_probs)
+            max_val_index_buy_lo = np.nanargmax(value_function)
+
+            optimal_buy_lo_depth = math.to_nearest(posted_depths[max_val_index_buy_lo], PRICE_GRANULARITY)
+            optimal_buy_lo_post = math.to_nearest(mid_price - optimal_buy_lo_depth - MO_PREVENTION_DEPTH, PRICE_GRANULARITY)
+
+            self.logger.info("optimal_buy_lo_post: {}".format(optimal_buy_lo_post))
+            self.logger.info("optimal_sell_lo_post: {}".format(optimal_sell_lo_post))
+            self.optimal_buy_lo_level = optimal_buy_lo_post
+            self.optimal_sell_lo_level = optimal_sell_lo_post
+            self.context['optimal_buy_lo_level'] = optimal_buy_lo_post
+            self.context['optimal_sell_lo_level'] = optimal_sell_lo_post
+
+            # self.logger.info("Current Contract Position: %d" % self.running_qty)
+            # plt.figure()
+            # plt.plot(posted_depths, value_function, c='r')
+            # plt.xlabel('LO depth')
+            # plt.ylabel('Expected Profit Per Trade')
+            # plt.title('Expected Profit per Trade (sell MO)')
+            # plt.savefig('value_sell_mo_{}.png'.format(self.loop_counter))
+
+            self.loop_counter += 1
 
         self.logger.info("Current XBT Balance: %.6f" % XBt_to_XBT(self.start_XBt))
         self.logger.info("Current Contract Position: %d" % self.running_qty)
@@ -187,19 +258,21 @@ class OrderManager:
     def place_orders(self):
         """Create order items for use in convergence."""
 
-        buy_orders = []
-        sell_orders = []
-        # Create orders from the outside in. This is intentional - let's say the inner order gets taken;
-        # then we match orders from the outside in, ensuring the fewest number of orders are amended and only
-        # a new order is created in the inside. If we did it inside-out, all orders would be amended
-        # down and a new order would be created at the outside.
-        for i in reversed(range(1, settings.ORDER_PAIRS + 1)):
-            if not self.long_position_limit_exceeded():
-                buy_orders.append(self.prepare_order(-i))
-            if not self.short_position_limit_exceeded():
-                sell_orders.append(self.prepare_order(i))
+        raise NotImplementedError
 
-        return self.converge_orders(buy_orders, sell_orders)
+        # buy_orders = []
+        # sell_orders = []
+        # # Create orders from the outside in. This is intentional - let's say the inner order gets taken;
+        # # then we match orders from the outside in, ensuring the fewest number of orders are amended and only
+        # # a new order is created in the inside. If we did it inside-out, all orders would be amended
+        # # down and a new order would be created at the outside.
+        # for i in reversed(range(1, settings.ORDER_PAIRS + 1)):
+        #     if not self.long_position_limit_exceeded():
+        #         buy_orders.append(self.prepare_order(-i))
+        #     if not self.short_position_limit_exceeded():
+        #         sell_orders.append(self.prepare_order(i))
+        #
+        # return self.converge_orders(buy_orders, sell_orders)
 
     def prepare_order(self, index):
         """Create an order object."""
@@ -377,12 +450,20 @@ class OrderManager:
         sys.exit()
 
     def run_loop(self):
+
+        trades_response = requests.get('https://testnet.bitmex.com/api/v1/trade?symbol=XBT&count=100&reverse=false')
+        # trades_response = requests.get('https://bitmex.com/api/v1/trade?symbol=XBT&count=100&reverse=false')
+        initial_trades = trades_response.json()
+        # print(type(initial_trades))
+        for trade in initial_trades:
+            self.trades_deque.append(trade)
+
         while True:
             sys.stdout.write("-----\n")
             sys.stdout.flush()
 
             # self.check_file_change()
-            sleep(settings.LOOP_INTERVAL)
+            # sleep(settings.LOOP_INTERVAL)
 
             # This will restart on very short downtime, but if it's longer,
             # the MM will crash entirely as it is unable to connect to the WS on boot.
@@ -391,17 +472,12 @@ class OrderManager:
                 self.restart()
 
             self.sanity_check()  # Ensures health of mm - several cut-out points here
-            self.print_status()  # Print skew, delta, etc
+            self.update_state()  # Print skew, delta, etc
             self.place_orders()  # Creates desired orders and converges to existing orders
 
     def restart(self):
         self.logger.info("Restarting the market maker...")
         os.execv(sys.executable, [sys.executable] + sys.argv)
-
-
-#
-# Helpers
-#
 
 
 def XBt_to_XBT(XBt):
@@ -416,14 +492,3 @@ def cost(instrument, quantity, price):
 
 def margin(instrument, quantity, price):
     return cost(instrument, quantity, price) * instrument["initMargin"]
-
-
-def run():
-    # self.logger.info('BitMEX Market Maker Version: %s\n' % constants.VERSION)
-
-    om = OrderManager()
-    # Try/except just keeps ctrl-c from printing an ugly stacktrace
-    try:
-        om.run_loop()
-    except (KeyboardInterrupt, SystemExit):
-        sys.exit()

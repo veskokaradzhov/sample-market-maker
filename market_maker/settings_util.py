@@ -5,7 +5,7 @@ import os
 import sys
 
 from market_maker.utils.dotdict import dotdict
-import market_maker._settings_base as baseSettings
+# import market_maker._settings_base as baseSettings
 
 
 def import_path(fullpath):
@@ -34,7 +34,7 @@ if symbol:
 
 # Assemble settings.
 settings = {}
-settings.update(vars(baseSettings))
+# settings.update(vars(baseSettings))
 settings.update(vars(userSettings))
 if symbolSettings:
     settings.update(vars(symbolSettings))

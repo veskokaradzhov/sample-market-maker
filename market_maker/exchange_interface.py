@@ -1,7 +1,7 @@
 from time import sleep
 
 from market_maker import bitmex
-from market_maker.settings import settings
+from market_maker.settings_util import settings
 from market_maker.utils import log, errors
 
 
@@ -161,7 +161,6 @@ class ExchangeInterface:
     def check_if_orderbook_empty(self):
         """This function checks whether the order book is empty"""
         instrument = self.get_instrument()
-        print('instrument -> ', instrument)
         if instrument['midPrice'] is None:
             raise errors.MarketEmptyError("Orderbook is empty, cannot quote")
 
