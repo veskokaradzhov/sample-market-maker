@@ -64,21 +64,21 @@ def apply_inventory_markup(optimal_bid, optimal_ask, current_position, best_bid,
     elif plus_threshold < current_position <= long_level_1:
         return optimal_bid - 10 * PRICE_GRANULARITY, optimal_ask
     elif long_level_1 < current_position <= long_level_2:
-        return optimal_bid - 20 * PRICE_GRANULARITY, optimal_ask
+        return optimal_bid - 40 * PRICE_GRANULARITY, optimal_ask
     elif long_level_2 < current_position <= long_level_3:
-        return optimal_bid - 30 * PRICE_GRANULARITY, max(optimal_ask - 10 * PRICE_GRANULARITY, best_ask)
+        return optimal_bid - 80 * PRICE_GRANULARITY, max(optimal_ask - 40 * PRICE_GRANULARITY, best_ask)
     elif current_position > long_level_3:
-        return optimal_bid - 40 * PRICE_GRANULARITY, max(optimal_ask - 20 * PRICE_GRANULARITY, best_ask)
+        return optimal_bid - 140 * PRICE_GRANULARITY, max(optimal_ask - 80 * PRICE_GRANULARITY, best_ask)
 
     # shorts
     elif minus_threshold > current_position >= short_level_1:
         return optimal_bid, optimal_ask + 10 * PRICE_GRANULARITY
     elif short_level_1 > current_position >= short_level_2:
-        return optimal_bid, optimal_ask + 20 * PRICE_GRANULARITY
+        return optimal_bid, optimal_ask + 40 * PRICE_GRANULARITY
     elif short_level_2 > current_position >= short_level_3:
-        return min(optimal_bid + 10 * PRICE_GRANULARITY, best_bid), optimal_ask + 30 * PRICE_GRANULARITY
+        return min(optimal_bid + 40 * PRICE_GRANULARITY, best_bid), optimal_ask + 80 * PRICE_GRANULARITY
     elif current_position < short_level_3:
-        return min(optimal_bid + 20 * PRICE_GRANULARITY, best_bid), optimal_ask + 40 * PRICE_GRANULARITY
+        return min(optimal_bid + 80 * PRICE_GRANULARITY, best_bid), optimal_ask + 140 * PRICE_GRANULARITY
     else:
         raise ValueError('can not happen')
 
