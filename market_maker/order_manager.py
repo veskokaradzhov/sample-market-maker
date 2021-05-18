@@ -209,7 +209,7 @@ class OrderManager:
             optimal_buy_lo_post = math.to_nearest(mid_price - optimal_buy_lo_depth - MO_PREVENTION_DEPTH,
                                                   PRICE_GRANULARITY)
 
-            optimal_buy_lo_post, optimal_sell_lo_post = apply_inventory_markup(optimal_buy_lo_post, optimal_sell_lo_post, position, best_bid, best_ask)
+            optimal_buy_lo_post, optimal_sell_lo_post = apply_inventory_markup(optimal_buy_lo_post, optimal_sell_lo_post, self.running_qty, best_bid, best_ask)
 
             self.logger.info("optimal_buy_lo_post: {}".format(optimal_buy_lo_post))
             self.logger.info("optimal_sell_lo_post: {}".format(optimal_sell_lo_post))
