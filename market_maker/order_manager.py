@@ -43,44 +43,44 @@ def rho(x, cdf_func):
     return cdf_func(x)
 
 
-def apply_inventory_markup(optimal_bid, optimal_ask, current_position, best_bid, best_ask):
-    """ Return (markup_bid, markup_ask
-
-    if large positive inventory, widen bid level, shrink ask level
-    """
-
-    minus_threshold = -settings.ORDER_START_SIZE
-    plus_threshold = settings.ORDER_START_SIZE
-    long_level_1 = plus_threshold + 2 * settings.ORDER_STEP_SIZE
-    long_level_2 = long_level_1 + 2 * settings.ORDER_STEP_SIZE
-    long_level_3 = long_level_2 + 2 * settings.ORDER_STEP_SIZE
-    short_level_1 = minus_threshold - 2 * settings.ORDER_STEP_SIZE
-    short_level_2 = short_level_1 - 2 * settings.ORDER_STEP_SIZE
-    short_level_3 = short_level_2 - 2 * settings.ORDER_STEP_SIZE
-
-    if minus_threshold <= current_position <= plus_threshold:  # within thresholds, small position
-        return optimal_bid, optimal_ask
-    # longs
-    elif plus_threshold < current_position <= long_level_1:
-        return optimal_bid - 10 * PRICE_GRANULARITY, optimal_ask
-    elif long_level_1 < current_position <= long_level_2:
-        return optimal_bid - 40 * PRICE_GRANULARITY, optimal_ask
-    elif long_level_2 < current_position <= long_level_3:
-        return optimal_bid - 80 * PRICE_GRANULARITY, max(optimal_ask - 40 * PRICE_GRANULARITY, best_ask)
-    elif current_position > long_level_3:
-        return optimal_bid - 140 * PRICE_GRANULARITY, max(optimal_ask - 80 * PRICE_GRANULARITY, best_ask)
-
-    # shorts
-    elif minus_threshold > current_position >= short_level_1:
-        return optimal_bid, optimal_ask + 10 * PRICE_GRANULARITY
-    elif short_level_1 > current_position >= short_level_2:
-        return optimal_bid, optimal_ask + 40 * PRICE_GRANULARITY
-    elif short_level_2 > current_position >= short_level_3:
-        return min(optimal_bid + 40 * PRICE_GRANULARITY, best_bid), optimal_ask + 80 * PRICE_GRANULARITY
-    elif current_position < short_level_3:
-        return min(optimal_bid + 80 * PRICE_GRANULARITY, best_bid), optimal_ask + 140 * PRICE_GRANULARITY
-    else:
-        raise ValueError('can not happen')
+# def apply_inventory_markup(optimal_bid, optimal_ask, current_position, best_bid, best_ask):
+#     """ Return (markup_bid, markup_ask
+#
+#     if large positive inventory, widen bid level, shrink ask level
+#     """
+#
+#     minus_threshold = -settings.ORDER_START_SIZE
+#     plus_threshold = settings.ORDER_START_SIZE
+#     long_level_1 = plus_threshold + 2 * settings.ORDER_STEP_SIZE
+#     long_level_2 = long_level_1 + 2 * settings.ORDER_STEP_SIZE
+#     long_level_3 = long_level_2 + 2 * settings.ORDER_STEP_SIZE
+#     short_level_1 = minus_threshold - 2 * settings.ORDER_STEP_SIZE
+#     short_level_2 = short_level_1 - 2 * settings.ORDER_STEP_SIZE
+#     short_level_3 = short_level_2 - 2 * settings.ORDER_STEP_SIZE
+#
+#     if minus_threshold <= current_position <= plus_threshold:  # within thresholds, small position
+#         return optimal_bid, optimal_ask
+#     # longs
+#     elif plus_threshold < current_position <= long_level_1:
+#         return optimal_bid - 10 * PRICE_GRANULARITY, optimal_ask
+#     elif long_level_1 < current_position <= long_level_2:
+#         return optimal_bid - 40 * PRICE_GRANULARITY, optimal_ask
+#     elif long_level_2 < current_position <= long_level_3:
+#         return optimal_bid - 80 * PRICE_GRANULARITY, max(optimal_ask - 40 * PRICE_GRANULARITY, best_ask)
+#     elif current_position > long_level_3:
+#         return optimal_bid - 140 * PRICE_GRANULARITY, max(optimal_ask - 80 * PRICE_GRANULARITY, best_ask)
+#
+#     # shorts
+#     elif minus_threshold > current_position >= short_level_1:
+#         return optimal_bid, optimal_ask + 10 * PRICE_GRANULARITY
+#     elif short_level_1 > current_position >= short_level_2:
+#         return optimal_bid, optimal_ask + 40 * PRICE_GRANULARITY
+#     elif short_level_2 > current_position >= short_level_3:
+#         return min(optimal_bid + 40 * PRICE_GRANULARITY, best_bid), optimal_ask + 80 * PRICE_GRANULARITY
+#     elif current_position < short_level_3:
+#         return min(optimal_bid + 80 * PRICE_GRANULARITY, best_bid), optimal_ask + 140 * PRICE_GRANULARITY
+#     else:
+#         raise ValueError('can not happen')
 
 
 class OrderManager:
@@ -209,16 +209,16 @@ class OrderManager:
             optimal_buy_lo_post = math.to_nearest(mid_price - optimal_buy_lo_depth - MO_PREVENTION_DEPTH,
                                                   PRICE_GRANULARITY)
 
-            optimal_buy_lo_post_with_markup, optimal_sell_lo_post_with_markup = apply_inventory_markup(optimal_buy_lo_post, optimal_sell_lo_post, self.running_qty, best_bid, best_ask)
+            # optimal_buy_lo_post_with_markup, optimal_sell_lo_post_with_markup = apply_inventory_markup(optimal_buy_lo_post, optimal_sell_lo_post, self.running_qty, best_bid, best_ask)
 
             self.logger.info("optimal_buy_lo_post: {}".format(optimal_buy_lo_post))
-            self.logger.info("optimal_buy_lo_post_with_markup: {}".format(optimal_buy_lo_post_with_markup))
+            # self.logger.info("optimal_buy_lo_post_with_markup: {}".format(optimal_buy_lo_post_with_markup))
             self.logger.info("optimal_sell_lo_post: {}".format(optimal_sell_lo_post))
-            self.logger.info("optimal_sell_lo_post_with_markup: {}".format(optimal_sell_lo_post_with_markup))
-            self.optimal_buy_lo_level = optimal_buy_lo_post_with_markup
-            self.optimal_sell_lo_level = optimal_sell_lo_post_with_markup
-            self.context['optimal_buy_lo_level'] = optimal_buy_lo_post_with_markup
-            self.context['optimal_sell_lo_level'] = optimal_sell_lo_post_with_markup
+            # self.logger.info("optimal_sell_lo_post_with_markup: {}".format(optimal_sell_lo_post_with_markup))
+            self.optimal_buy_lo_level = optimal_buy_lo_post
+            self.optimal_sell_lo_level = optimal_sell_lo_post
+            self.context['optimal_buy_lo_level'] = optimal_buy_lo_post
+            self.context['optimal_sell_lo_level'] = optimal_sell_lo_post
 
             # self.logger.info("Current Contract Position: %d" % self.running_qty)
             # plt.figure()
